@@ -60,7 +60,7 @@ class Permission(Base):
     id = Column(Integer, primary_key=True, index=True)
     task_id = Column(Integer, ForeignKey("tasks.id"))
     user_id = Column(Integer, ForeignKey("users.id"))
-    permission = Column(String)
+    permission = Column(String)  # чтение, обновление, права автора
 
     task = relationship("Task", back_populates="permissions")
     user = relationship("User", back_populates="permissions")
