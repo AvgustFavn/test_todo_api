@@ -6,9 +6,9 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 from sqlalchemy import select, insert, delete, update
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import Optional
 
-from db import init_db, User, Task, Token, get_db, TokenData, Permission
+from db import User, Task, get_db, TokenData, Permission
 
 app = FastAPI()
 
@@ -44,7 +44,7 @@ async def authenticate_user(db, username: str, password: str):
     return user
 
 async def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не верные данные")
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
@@ -63,10 +63,10 @@ async def get_current_user(db: Session = Depends(get_db), token: str = Depends(o
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = await authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Не верные данные")
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"Токен": access_token, "token_type": "bearer"}
 
 @app.post("/register")
 async def register(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
@@ -74,7 +74,7 @@ async def register(username: str = Form(...), password: str = Form(...), db: Ses
     user = user.scalar_one_or_none()
     print(user, type(user))
     if user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already taken")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Этот логин уже занят")
     hashed_password = pwd_context.hash(password)
     user = User(username=username, password=hashed_password)
     db.add(user)
@@ -109,24 +109,24 @@ async def assign_task_permission(task_id: int, assignment: PermissionAssignment,
     permission = assignment.permission
     task = await get_task_by_id(db, task_id)
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
     if task.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this task")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Вы не владелец этой задачи")
     if permission not in ["чтение", "обновление", "права автора"]:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid permission type")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Не верный тип доступа")
     await assign_permission(db, task_id, user_id, permission)
-    return {"message": "Permission assigned"}
+    return {"message": "Права выданы"}
 
 @app.delete("/tasks/{task_id}/permissions/{user_id}")
 async def revoke_task_permission(task_id: int, user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     task = await get_task_by_id(db, task_id)
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
     if task.owner_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this task")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Вы не владелец этой задачи")
 
     await revoke_permission(db, task_id, user_id)
-    return {"message": "Permission revoked"}
+    return {"message": "Права изъяты"}
 
 async def update_task(db, task_id, title: Optional[str] = None, description: Optional[str] = None):
     query = update(Task).where(Task.id == task_id)
@@ -157,19 +157,19 @@ async def update_task_route(task_id: int, title: Optional[str] = Form(None), des
     task = await get_task_by_id(db, task_id)
     print(task)
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
 
     if task.owner_id != current_user.id:
         has_update_permission = await has_permission(db, task_id, current_user.id, "обновление")
         has_author_permission = await has_permission(db, task_id, current_user.id, "права автора")
         if has_update_permission or has_author_permission:
             await update_task(db, task_id, title, description)
-            return {"message": "Task updated"}
+            return {"message": "Задача обновлена"}
         else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have update permission for this task")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="У вас недостаточно прав для изменений")
     else:
         await update_task(db, task_id, title, description)
-        return {"message": "Task updated"}
+        return {"message": "Задача обновлена"}
 
 
 @app.delete("/tasks/{task_id}")
@@ -177,22 +177,23 @@ async def delete_task(task_id: int, db: Session = Depends(get_db), current_user:
     task = await get_task_by_id(db, task_id)
 
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
 
     has_author_permission = await has_permission(db, task_id, current_user.id, "права автора")
     if task.owner_id != current_user.id or has_author_permission:
         query = delete(Task).where(Task.id == task_id)
         await db.execute(query)
         await db.commit()
-        return {"message": "Task deleted"}
+        return {"message": "Задача удалена"}
     else:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not the owner of this task and cannot delete it")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Вы не владелец этой записи, для того "
+                                                                          "чтобы иметь права на удаление")
 
 @app.get("/tasks/{task_id}")
 async def read_task(task_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     task = await get_task_by_id(db, task_id)
     if not task:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Задача не найдена")
 
     if task.owner_id != current_user.id:
         has_read_permission = await has_permission(db, task_id, current_user.id)
